@@ -171,7 +171,7 @@ static void print_apps(plist_t apps)
 						case PLIST_STRING:
 							printf("\"%s\"", plist_get_string_ptr(node, NULL));
 							break;
-						case PLIST_INT:
+						case PLIST_UINT:
 							plist_get_uint_val(node, &uval);
 							printf("%" PRIu64, uval);
 							break;
@@ -351,11 +351,10 @@ static int zip_get_app_directory(struct zip* zf, char** path)
 
 				len = p - name + 1;
                 /* make sure app directory endwith .app */
-                 if (len < 12 || strncmp(p - 4, ".app", 4))
-                 {
-                     continue;
-                 }
-
+                if (len < 12 || strncmp(p - 4, ".app", 4))
+                {
+                        continue;
+                }
 				if (path != NULL) {
 					free(*path);
 					*path = NULL;
@@ -862,6 +861,7 @@ run_again:
 			plist_array_append_item(return_attrs, plist_new_string("CFBundleIdentifier"));
 			plist_array_append_item(return_attrs, plist_new_string("CFBundleShortVersionString"));
 			plist_array_append_item(return_attrs, plist_new_string("CFBundleDisplayName"));
+            plist_array_append_item(return_attrs, plist_new_string("CFBundleExecutable"));
 		}
 
 		if (return_attrs) {
@@ -1299,10 +1299,14 @@ run_again:
 			if (key && (plist_get_node_type(node) == PLIST_DICT)) {
 				char *s_dispName = NULL;
 				char *s_version = NULL;
+              
+                char *s_executable = NULL;
 				plist_t dispName =
 					plist_dict_get_item(node, "CFBundleDisplayName");
 				plist_t version =
 					plist_dict_get_item(node, "CFBundleShortVersionString");
+                plist_t executable =
+                    plist_dict_get_item(node, "CFBundleExecutable");
 				if (dispName) {
 					plist_get_string_val(dispName, &s_dispName);
 				}
@@ -1315,6 +1319,13 @@ run_again:
 				if (s_version) {
 					printf("%s - %s %s\n", key, s_dispName, s_version);
 					free(s_version);
+                if (executable) {
+                    plist_get_string_val(executable, &s_executable);
+                }
+                if (!s_executable) {
+                    s_executable = strdup(key);
+                }
+                    
 				} else {
 					printf("%s - %s\n", key, s_dispName);
 				}

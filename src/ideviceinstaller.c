@@ -22,6 +22,7 @@
  * USA
  */
 #ifdef HAVE_CONFIG_H
+#include "paramea.h"
 #include <config.h>
 #endif
 #include <stdlib.h>
@@ -43,6 +44,7 @@
 #ifndef WIN32
 #include <signal.h>
 #endif
+#include <stdbool.h>
 
 #include <libimobiledevice/libimobiledevice.h>
 #include <libimobiledevice/lockdown.h>
@@ -459,8 +461,12 @@ static void print_usage(int argc, char **argv, int is_error)
 	"  -d, --debug         Enable communication debugging\n"
 	"  -v, --version       Print version information\n"
 	"\n"
+    
 	"Homepage:    <" PACKAGE_URL ">\n"
-	"Bug Reports: <" PACKAGE_BUGREPORT ">\n"
+	"Bug Reports: <" PACKAGE_BUGREPORT ">\n\n"
+    
+    "Modified by Paramea Team: <" MOD_URL ">\n"
+    
 	);
 }
 
@@ -650,50 +656,62 @@ static void parse_opts(int argc, char **argv)
 
 static int afc_upload_file(afc_client_t afc, const char* filename, const char* dstfn)
 {
-	FILE *f = NULL;
-	uint64_t af = 0;
-	char buf[1048576];
+    FILE *f = NULL;
+    uint64_t af = 0;
+    char buf[1048576];
 
-	f = fopen(filename, "rb");
-	if (!f) {
-		fprintf(stderr, "fopen: %s: %s\n", filename, strerror(errno));
-		return -1;
-	}
+    f = fopen(filename, "rb");
+    if (!f) {
+        fprintf(stderr, "fopen: %s: %s\n", filename, strerror(errno));
+        return -1;
+    }
 
-	if ((afc_file_open(afc, dstfn, AFC_FOPEN_WRONLY, &af) != AFC_E_SUCCESS) || !af) {
-		fclose(f);
-		fprintf(stderr, "afc_file_open on '%s' failed!\n", dstfn);
-		return -1;
-	}
+    if ((afc_file_open(afc, dstfn, AFC_FOPEN_WRONLY, &af) != AFC_E_SUCCESS) || !af) {
+        fclose(f);
+        fprintf(stderr, "afc_file_open on '%s' failed!\n", dstfn);
+        return -1;
+    }
 
-	size_t amount = 0;
-	do {
-		amount = fread(buf, 1, sizeof(buf), f);
-		if (amount > 0) {
-			uint32_t written, total = 0;
-			while (total < amount) {
-				written = 0;
-				afc_error_t aerr = afc_file_write(afc, af, buf, amount, &written);
-				if (aerr != AFC_E_SUCCESS) {
-					fprintf(stderr, "AFC Write error: %d\n", aerr);
-					break;
-				}
-				total += written;
-			}
-			if (total != amount) {
-				fprintf(stderr, "Error: wrote only %u of %u\n", total, (uint32_t)amount);
-				afc_file_close(afc, af);
-				fclose(f);
-				return -1;
-			}
-		}
-	} while (amount > 0);
+    size_t amount = 0;
+    int retries = 0;
+    while (true) {
+        amount = fread(buf, 1, sizeof(buf), f);
+        if (amount > 0) {
+            uint32_t written, total = 0;
+            while (total < amount) {
+                written = 0;
+                afc_error_t aerr = afc_file_write(afc, af, buf, amount, &written);
+                if (aerr != AFC_E_SUCCESS) {
+                    if (aerr == AFC_E_OP_WOULD_BLOCK && retries < 3) {
+                        // If the write operation would block, sleep for 1 second and try again
+                        sleep(1);
+                        retries++;
+                        continue;
+                    } else {
+                        fprintf(stderr, "AFC Write error: %d\n", aerr);
+                        break;
+                    }
+                }
+                total += written;
+            }
+            if (total != amount) {
+                fprintf(stderr, "Error: wrote only %u of %u\n", total, (uint32_t)amount);
+                afc_file_close(afc, af);
+                fclose(f);
+                return -1;
+            }
+        }
+        if (amount < sizeof(buf)) {
+            break;
+        }
+    }
 
-	afc_file_close(afc, af);
-	fclose(f);
+    afc_file_close(afc, af);
+    fclose(f);
 
-	return 0;
+    return 0;
 }
+
 
 static void afc_upload_dir(afc_client_t afc, const char* path, const char* afcpath)
 {
